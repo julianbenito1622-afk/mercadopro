@@ -37,7 +37,7 @@ type Panel = 'cerrado' | 'productos' | 'peso'
 // ── Componente ────────────────────────────────────────────────────────────────
 export default function VentaRapida() {
   const {
-    clienteId, clienteNombre, items,
+    clienteId, items,
     setCliente, agregarItem, eliminarItem,
     calcularTotal, limpiarVenta,
   } = useVentaStore()

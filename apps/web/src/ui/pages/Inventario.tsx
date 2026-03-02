@@ -13,7 +13,6 @@ import {
 import { obtenerProductos, type ProductoRow } from '../../db/queries/productos.queries'
 import {
   calcularDiasParaVencer,
-  calcularEstadoLote,
   calcularPorcentajeMerma,
   calcularValorInventario,
   formatearKg,

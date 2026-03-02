@@ -41,7 +41,7 @@ export async function initDatabase(): Promise<void> {
   // OriginPrivateFileSystemVFS usa createSyncAccessHandle(), solo disponible
   // en contextos Worker (no en el hilo principal del navegador).
   const enWorker =
-    typeof WorkerGlobalScope !== 'undefined' && self instanceof WorkerGlobalScope
+    typeof self !== 'undefined' && self.constructor?.name === 'DedicatedWorkerGlobalScope'
   if (enWorker) {
     try {
       const { OriginPrivateFileSystemVFS } = await import(
