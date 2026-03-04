@@ -1,6 +1,7 @@
 import { Component, useEffect, useState } from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { initDatabase } from './db/database'
+import { iniciarSyncAutomatico } from './core/sync/syncEngine'
 import AppLayout from './ui/layouts/AppLayout'
 import VentaRapida from './ui/pages/VentaRapida'
 import Inventario from './ui/pages/Inventario'
@@ -57,6 +58,13 @@ export default function App() {
       .then(() => { setError(null); setListo(true) })
       .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)))
   }, [])
+
+  // Iniciar motor de sync automático si hay API configurada
+  useEffect(() => {
+    if (!listo) return
+    const detenerSync = iniciarSyncAutomatico(60_000)
+    return detenerSync
+  }, [listo])
 
   if (error) {
     return (
