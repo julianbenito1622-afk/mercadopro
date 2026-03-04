@@ -7,6 +7,7 @@ import {
   actualizarCliente,
   actualizarCreditProfile,
   obtenerDeudaCliente,
+  desactivarCliente,
   type PagoRow,
 } from '../../db/queries/clientes.queries'
 import { formatearDeuda } from '../../core/creditos/creditoUtils'
@@ -40,6 +41,7 @@ export default function ClienteForm() {
   const [cargando, setCargando] = useState(true)
   const [guardando, setGuardando] = useState(false)
   const [errores, setErrores] = useState<{ nombre?: string; celular?: string; dni?: string }>({})
+  const [confirmarEliminar, setConfirmarEliminar] = useState(false)
 
   function validar(): boolean {
     const nuevosErrores: typeof errores = {}
@@ -109,6 +111,17 @@ export default function ClienteForm() {
           plazo_dias: plazoDias,
         })
       }
+      navigate('/clientes')
+    } finally {
+      setGuardando(false)
+    }
+  }
+
+  const handleDesactivar = async () => {
+    if (!id) return
+    setGuardando(true)
+    try {
+      await desactivarCliente(id)
       navigate('/clientes')
     } finally {
       setGuardando(false)
@@ -311,6 +324,41 @@ export default function ClienteForm() {
         >
           {guardando ? 'Guardando...' : 'Guardar'}
         </button>
+
+        {/* Desactivar cliente (solo en edición) */}
+        {esEdicion && (
+          <div className="border-t border-red-900 pt-4 flex flex-col gap-2">
+            {!confirmarEliminar ? (
+              <button
+                onClick={() => setConfirmarEliminar(true)}
+                className="w-full h-12 border border-red-800 text-red-400 font-semibold rounded-xl text-sm"
+              >
+                Desactivar cliente
+              </button>
+            ) : (
+              <div className="flex flex-col gap-2">
+                <p className="text-red-400 text-sm text-center">
+                  ¿Confirmas desactivar este cliente?
+                </p>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setConfirmarEliminar(false)}
+                    className="flex-1 h-12 bg-slate-800 text-slate-300 font-semibold rounded-xl text-sm"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    onClick={handleDesactivar}
+                    disabled={guardando}
+                    className="flex-1 h-12 bg-red-700 text-white font-bold rounded-xl text-sm"
+                  >
+                    Sí, desactivar
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   )

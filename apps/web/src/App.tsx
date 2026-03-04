@@ -12,6 +12,8 @@ import ProductoForm from './ui/pages/ProductoForm'
 import CierreDia from './ui/pages/CierreDia'
 import Configuracion from './ui/pages/Configuracion'
 import ClienteForm from './ui/pages/ClienteForm'
+import Proveedores from './ui/pages/Proveedores'
+import ProveedorForm from './ui/pages/ProveedorForm'
 
 // ── Error Boundary ────────────────────────────────────────────────────────────
 class ErrorBoundary extends Component<
@@ -99,6 +101,9 @@ export default function App() {
           <Route path="/productos" element={<Productos />} />
           <Route path="/productos/nuevo" element={<ProductoForm />} />
           <Route path="/productos/editar/:id" element={<ProductoForm />} />
+          <Route path="/proveedores" element={<Proveedores />} />
+          <Route path="/proveedores/nuevo" element={<ProveedorForm />} />
+          <Route path="/proveedores/editar/:id" element={<ProveedorForm />} />
         </Route>
       </Routes>
     </BrowserRouter>
