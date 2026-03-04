@@ -1,6 +1,7 @@
 import { Component, useEffect, useState } from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { initDatabase } from './db/database'
+import { iniciarSyncAutomatico } from './core/sync/syncEngine'
 import AppLayout from './ui/layouts/AppLayout'
 import VentaRapida from './ui/pages/VentaRapida'
 import Inventario from './ui/pages/Inventario'
@@ -11,6 +12,8 @@ import ProductoForm from './ui/pages/ProductoForm'
 import CierreDia from './ui/pages/CierreDia'
 import Configuracion from './ui/pages/Configuracion'
 import ClienteForm from './ui/pages/ClienteForm'
+import Proveedores from './ui/pages/Proveedores'
+import ProveedorForm from './ui/pages/ProveedorForm'
 
 // ── Error Boundary ────────────────────────────────────────────────────────────
 class ErrorBoundary extends Component<
@@ -58,6 +61,13 @@ export default function App() {
       .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)))
   }, [])
 
+  // Iniciar motor de sync automático si hay API configurada
+  useEffect(() => {
+    if (!listo) return
+    const detenerSync = iniciarSyncAutomatico(60_000)
+    return detenerSync
+  }, [listo])
+
   if (error) {
     return (
       <div className="min-h-screen bg-slate-950 text-red-400 flex items-center justify-center text-lg">
@@ -91,6 +101,9 @@ export default function App() {
           <Route path="/productos" element={<Productos />} />
           <Route path="/productos/nuevo" element={<ProductoForm />} />
           <Route path="/productos/editar/:id" element={<ProductoForm />} />
+          <Route path="/proveedores" element={<Proveedores />} />
+          <Route path="/proveedores/nuevo" element={<ProveedorForm />} />
+          <Route path="/proveedores/editar/:id" element={<ProveedorForm />} />
         </Route>
       </Routes>
     </BrowserRouter>

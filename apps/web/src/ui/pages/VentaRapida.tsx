@@ -4,6 +4,7 @@ import { obtenerProductosPantalla, type ProductoRow } from '../../db/queries/pro
 import { registrarVenta } from '../../db/queries/ventas.queries'
 import { calcularSubtotal } from '../../core/ventas/ventaUtils'
 import { useVentaStore } from '../../stores/ventaStore'
+import { useDiaStore } from '../../stores/diaStore'
 import { formatearDeuda } from '../../core/creditos/creditoUtils'
 
 // ── Sonido ka-ching con Web Audio API ─────────────────────────────────────────
@@ -41,6 +42,7 @@ export default function VentaRapida() {
     setCliente, agregarItem, eliminarItem,
     calcularTotal, limpiarVenta,
   } = useVentaStore()
+  const { recargarTotal } = useDiaStore()
 
   const [clientes, setClientes] = useState<ClienteRow[]>([])
   const [productos, setProductos] = useState<ProductoRow[]>([])
@@ -114,6 +116,7 @@ export default function VentaRapida() {
       })
       sonarKaChing()
       limpiarVenta()
+      recargarTotal()
       setFlashExito(true)
       setTimeout(() => setFlashExito(false), 1500)
     } finally {

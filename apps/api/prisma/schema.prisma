@@ -1,0 +1,459 @@
+// MercadoPro — Schema PostgreSQL (espejo del SQLite local)
+// Generado en Fase 4
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ── NEGOCIO ──────────────────────────────────────────────────
+model Business {
+  id          String   @id
+  nombre      String
+  ruc         String?
+  rubro       String   @default("ALIMENTOS_PERECEDEROS")
+  plan        String   @default("FREE")
+  mercado     String?
+  syncStatus  String   @default("SYNCED") @map("sync_status")
+  createdAt   DateTime @map("created_at")
+  updatedAt   DateTime @map("updated_at")
+
+  branches     Branch[]
+  users        AppUser[]
+  categories   Category[]
+  products     Product[]
+  clients      Client[]
+  suppliers    Supplier[]
+  batches      Batch[]
+  consignments Consignment[]
+  configs      Configuracion[]
+  containerTypes ContainerType[]
+
+  @@map("business")
+}
+
+// ── SUCURSAL ─────────────────────────────────────────────────
+model Branch {
+  id         String   @id
+  businessId String   @map("business_id")
+  nombre     String
+  ubicacion  String?
+  syncStatus String   @default("SYNCED") @map("sync_status")
+  createdAt  DateTime @map("created_at")
+  updatedAt  DateTime @map("updated_at")
+
+  business Business @relation(fields: [businessId], references: [id])
+  batches  Batch[]
+  sales    Sale[]
+
+  @@map("branch")
+}
+
+// ── USUARIO ──────────────────────────────────────────────────
+model AppUser {
+  id         String   @id
+  businessId String   @map("business_id")
+  branchId   String?  @map("branch_id")
+  nombre     String
+  celular    String
+  pin        String
+  rol        String   @default("VENDEDOR")
+  activo     Boolean  @default(true)
+  syncStatus String   @default("SYNCED") @map("sync_status")
+  createdAt  DateTime @map("created_at")
+  updatedAt  DateTime @map("updated_at")
+
+  business Business @relation(fields: [businessId], references: [id])
+
+  @@map("app_user")
+}
+
+// ── CATEGORÍA ────────────────────────────────────────────────
+model Category {
+  id         String   @id
+  businessId String   @map("business_id")
+  nombre     String
+  orden      Int      @default(0)
+  syncStatus String   @default("SYNCED") @map("sync_status")
+  createdAt  DateTime @map("created_at")
+  updatedAt  DateTime @map("updated_at")
+
+  business Business  @relation(fields: [businessId], references: [id])
+  products Product[]
+
+  @@map("category")
+}
+
+// ── PRODUCTO ─────────────────────────────────────────────────
+model Product {
+  id                   String   @id
+  businessId           String   @map("business_id")
+  categoryId           String   @map("category_id")
+  nombre               String
+  nombreCorto          String   @map("nombre_corto")
+  unidadVentaPrincipal String   @default("KG") @map("unidad_venta_principal")
+  unidadBase           String   @default("KG") @map("unidad_base")
+  precioVentaActual    Float    @default(0) @map("precio_venta_actual")
+  requierePesaje       Boolean  @default(true) @map("requiere_pesaje")
+  vidaUtilDias         Int      @default(7) @map("vida_util_dias")
+  activo               Boolean  @default(true)
+  esPantallaRapida     Boolean  @default(false) @map("es_pantalla_rapida")
+  ordenPantalla        Int      @default(0) @map("orden_pantalla")
+  imagenUrl            String?  @map("imagen_url")
+  syncStatus           String   @default("SYNCED") @map("sync_status")
+  createdAt            DateTime @map("created_at")
+  updatedAt            DateTime @map("updated_at")
+
+  business      Business       @relation(fields: [businessId], references: [id])
+  category      Category       @relation(fields: [categoryId], references: [id])
+  batches       Batch[]
+  saleItems     SaleItem[]
+  priceHistory  PriceHistory[]
+  productUnits  ProductUnit[]
+
+  @@map("product")
+}
+
+// ── TIPO DE ENVASE ────────────────────────────────────────────
+model ContainerType {
+  id          String   @id
+  businessId  String   @map("business_id")
+  nombre      String
+  pesoTaraKg  Float    @default(0) @map("peso_tara_kg")
+  descripcion String?
+  syncStatus  String   @default("SYNCED") @map("sync_status")
+  createdAt   DateTime @map("created_at")
+  updatedAt   DateTime @map("updated_at")
+
+  business Business @relation(fields: [businessId], references: [id])
+  batches  Batch[]
+
+  @@map("container_type")
+}
+
+// ── PRODUCTO_UNIDAD ───────────────────────────────────────────
+model ProductUnit {
+  productId      String  @map("product_id")
+  unidad         String
+  equivalenciaKg Float   @map("equivalencia_kg")
+  esPesoVariable Boolean @default(false) @map("es_peso_variable")
+
+  product Product @relation(fields: [productId], references: [id])
+
+  @@id([productId, unidad])
+  @@map("product_unit")
+}
+
+// ── PROVEEDOR ─────────────────────────────────────────────────
+model Supplier {
+  id                    String   @id
+  businessId            String   @map("business_id")
+  nombre                String
+  celular               String?
+  tipo                  String   @default("DIRECTO")
+  zonaOrigen            String?  @map("zona_origen")
+  comisionConsignacion  Float?   @map("comision_consignacion")
+  syncStatus            String   @default("SYNCED") @map("sync_status")
+  createdAt             DateTime @map("created_at")
+  updatedAt             DateTime @map("updated_at")
+
+  business     Business      @relation(fields: [businessId], references: [id])
+  batches      Batch[]
+  consignments Consignment[]
+
+  @@map("supplier")
+}
+
+// ── LOTE ──────────────────────────────────────────────────────
+model Batch {
+  id                        String   @id
+  businessId                String   @map("business_id")
+  branchId                  String   @map("branch_id")
+  productId                 String   @map("product_id")
+  supplierId                String?  @map("supplier_id")
+  tipoIngreso               String   @default("COMPRA_DIRECTA") @map("tipo_ingreso")
+  fechaEntrada              DateTime @map("fecha_entrada")
+  cantidadInicialKg         Float    @default(0) @map("cantidad_inicial_kg")
+  cantidadActualKg          Float    @default(0) @map("cantidad_actual_kg")
+  costoUnitario             Float    @default(0) @map("costo_unitario")
+  costoTotal                Float    @default(0) @map("costo_total")
+  envaseCantidad            Int      @default(0) @map("envases_cantidad")
+  envaseTipoId              String?  @map("envase_tipo_id")
+  fechaVencimientoEstimada  DateTime @map("fecha_vencimiento_estimada")
+  estado                    String   @default("FRESCO")
+  alertaMermaDias           Int      @default(2) @map("alerta_merma_dias")
+  notas                     String?
+  syncStatus                String   @default("SYNCED") @map("sync_status")
+  createdAt                 DateTime @map("created_at")
+  updatedAt                 DateTime @map("updated_at")
+
+  business          Business          @relation(fields: [businessId], references: [id])
+  branch            Branch            @relation(fields: [branchId], references: [id])
+  product           Product           @relation(fields: [productId], references: [id])
+  supplier          Supplier?         @relation(fields: [supplierId], references: [id])
+  containerType     ContainerType?    @relation(fields: [envaseTipoId], references: [id])
+  stockMovements    StockMovement[]
+  saleItems         SaleItem[]
+  consignmentBatches ConsignmentBatch[]
+
+  @@map("batch")
+}
+
+// ── MOVIMIENTO DE STOCK ───────────────────────────────────────
+model StockMovement {
+  id             String   @id
+  batchId        String   @map("batch_id")
+  tipo           String
+  cantidadKg     Float    @map("cantidad_kg")
+  motivo         String?
+  saleItemId     String?  @map("sale_item_id")
+  registradoPor  String   @map("registrado_por")
+  fecha          DateTime
+  syncStatus     String   @default("SYNCED") @map("sync_status")
+  createdAt      DateTime @map("created_at")
+  updatedAt      DateTime @map("updated_at")
+
+  batch Batch @relation(fields: [batchId], references: [id])
+
+  @@map("stock_movement")
+}
+
+// ── CLIENTE ───────────────────────────────────────────────────
+model Client {
+  id            String   @id
+  businessId    String   @map("business_id")
+  nombre        String
+  nombreCorto   String   @map("nombre_corto")
+  celular       String?
+  tipo          String   @default("MINORISTA")
+  dniRuc        String?  @map("dni_ruc")
+  direccion     String?
+  esFrecuente   Boolean  @default(false) @map("es_frecuente")
+  ordenPantalla Int      @default(0) @map("orden_pantalla")
+  activo        Boolean  @default(true)
+  syncStatus    String   @default("SYNCED") @map("sync_status")
+  createdAt     DateTime @map("created_at")
+  updatedAt     DateTime @map("updated_at")
+
+  business      Business       @relation(fields: [businessId], references: [id])
+  creditProfile CreditProfile?
+  sales         Sale[]
+  payments      Payment[]
+
+  @@map("client")
+}
+
+// ── PERFIL DE CRÉDITO ─────────────────────────────────────────
+model CreditProfile {
+  id                     String    @id
+  clientId               String    @unique @map("client_id")
+  limiteCredito          Float     @default(0) @map("limite_credito")
+  plazoDias              Int       @default(3) @map("plazo_dias")
+  saldoActual            Float     @default(0) @map("saldo_actual")
+  score                  Int       @default(100)
+  estado                 String    @default("ACTIVO")
+  fechaUltimoPago        DateTime? @map("fecha_ultimo_pago")
+  totalHistoricoCredito  Float     @default(0) @map("total_historico_credito")
+  totalHistoricoPagado   Float     @default(0) @map("total_historico_pagado")
+  vecesMoroso            Int       @default(0) @map("veces_moroso")
+  syncStatus             String    @default("SYNCED") @map("sync_status")
+  createdAt              DateTime  @map("created_at")
+  updatedAt              DateTime  @map("updated_at")
+
+  client Client @relation(fields: [clientId], references: [id])
+
+  @@map("credit_profile")
+}
+
+// ── VENTA ─────────────────────────────────────────────────────
+model Sale {
+  id                      String    @id
+  businessId              String    @map("business_id")
+  branchId                String    @map("branch_id")
+  userId                  String    @map("user_id")
+  clientId                String?   @map("client_id")
+  numeroTicket            String    @map("numero_ticket")
+  fecha                   DateTime
+  subtotal                Float     @default(0)
+  descuento               Float     @default(0)
+  total                   Float     @default(0)
+  metodoPago              String    @default("EFECTIVO") @map("metodo_pago")
+  estadoPago              String    @default("PAGADO") @map("estado_pago")
+  montoPagado             Float     @default(0) @map("monto_pagado")
+  montoPendiente          Float     @default(0) @map("monto_pendiente")
+  fechaVencimientoCredito DateTime? @map("fecha_vencimiento_credito")
+  notas                   String?
+  syncStatus              String    @default("SYNCED") @map("sync_status")
+  deviceId                String    @map("device_id")
+  createdAt               DateTime  @map("created_at")
+  updatedAt               DateTime  @map("updated_at")
+
+  branch      Branch       @relation(fields: [branchId], references: [id])
+  client      Client?      @relation(fields: [clientId], references: [id])
+  saleItems   SaleItem[]
+  payments    Payment[]
+  taxDocument TaxDocument?
+
+  @@map("sale")
+}
+
+// ── DETALLE DE VENTA ──────────────────────────────────────────
+model SaleItem {
+  id             String   @id
+  saleId         String   @map("sale_id")
+  productId      String   @map("product_id")
+  batchId        String?  @map("batch_id")
+  cantidad       Float
+  unidadVenta    String   @default("KG") @map("unidad_venta")
+  pesoBrutoKg    Float    @default(0) @map("peso_bruto_kg")
+  pesoTaraKg     Float    @default(0) @map("peso_tara_kg")
+  pesoNetoKg     Float    @default(0) @map("peso_neto_kg")
+  precioUnitario Float    @map("precio_unitario")
+  subtotal       Float
+  syncStatus     String   @default("SYNCED") @map("sync_status")
+  createdAt      DateTime @map("created_at")
+  updatedAt      DateTime @map("updated_at")
+
+  sale    Sale     @relation(fields: [saleId], references: [id])
+  product Product  @relation(fields: [productId], references: [id])
+  batch   Batch?   @relation(fields: [batchId], references: [id])
+
+  @@map("sale_item")
+}
+
+// ── PAGO ──────────────────────────────────────────────────────
+model Payment {
+  id            String   @id
+  clientId      String   @map("client_id")
+  saleId        String?  @map("sale_id")
+  monto         Float
+  metodo        String
+  fecha         DateTime
+  referencia    String?
+  notas         String?
+  registradoPor String   @map("registrado_por")
+  syncStatus    String   @default("SYNCED") @map("sync_status")
+  createdAt     DateTime @map("created_at")
+  updatedAt     DateTime @map("updated_at")
+
+  client Client @relation(fields: [clientId], references: [id])
+  sale   Sale?  @relation(fields: [saleId], references: [id])
+
+  @@map("payment")
+}
+
+// ── CONSIGNACIÓN ──────────────────────────────────────────────
+model Consignment {
+  id                  String    @id
+  businessId          String    @map("business_id")
+  supplierId          String    @map("supplier_id")
+  fechaRecepcion      DateTime  @map("fecha_recepcion")
+  estado              String    @default("ABIERTA")
+  cantidadRecibidaKg  Float     @default(0) @map("cantidad_recibida_kg")
+  cantidadVendidaKg   Float     @default(0) @map("cantidad_vendida_kg")
+  cantidadMermaKg     Float     @default(0) @map("cantidad_merma_kg")
+  montoTotalVentas    Float     @default(0) @map("monto_total_ventas")
+  comisionPorcentaje  Float     @default(0) @map("comision_porcentaje")
+  comisionMonto       Float     @default(0) @map("comision_monto")
+  otrosDescuentos     Float     @default(0) @map("otros_descuentos")
+  montoAPagar         Float     @default(0) @map("monto_a_pagar")
+  fechaLiquidacion    DateTime? @map("fecha_liquidacion")
+  notas               String?
+  syncStatus          String    @default("SYNCED") @map("sync_status")
+  createdAt           DateTime  @map("created_at")
+  updatedAt           DateTime  @map("updated_at")
+
+  business           Business           @relation(fields: [businessId], references: [id])
+  supplier           Supplier           @relation(fields: [supplierId], references: [id])
+  consignmentBatches ConsignmentBatch[]
+
+  @@map("consignment")
+}
+
+// ── LOTE_CONSIGNACIÓN ─────────────────────────────────────────
+model ConsignmentBatch {
+  consignmentId String @map("consignment_id")
+  batchId       String @map("batch_id")
+
+  consignment Consignment @relation(fields: [consignmentId], references: [id])
+  batch       Batch       @relation(fields: [batchId], references: [id])
+
+  @@id([consignmentId, batchId])
+  @@map("consignment_batch")
+}
+
+// ── HISTORIAL DE PRECIOS ──────────────────────────────────────
+model PriceHistory {
+  id             String   @id
+  productId      String   @map("product_id")
+  precioAnterior Float    @map("precio_anterior")
+  precioNuevo    Float    @map("precio_nuevo")
+  fecha          DateTime
+  registradoPor  String   @map("registrado_por")
+  syncStatus     String   @default("SYNCED") @map("sync_status")
+  createdAt      DateTime @map("created_at")
+  updatedAt      DateTime @map("updated_at")
+
+  product Product @relation(fields: [productId], references: [id])
+
+  @@map("price_history")
+}
+
+// ── DOCUMENTO TRIBUTARIO ──────────────────────────────────────
+model TaxDocument {
+  id          String    @id
+  saleId      String    @unique @map("sale_id")
+  tipo        String    @default("NINGUNO")
+  serie       String?
+  numero      String?
+  sunatStatus String    @default("NO_REQUERIDO") @map("sunat_status")
+  ublXml      String?   @map("ubl_xml")
+  hashCdr     String?   @map("hash_cdr")
+  fechaEnvio  DateTime? @map("fecha_envio")
+  syncStatus  String    @default("SYNCED") @map("sync_status")
+  createdAt   DateTime  @map("created_at")
+  updatedAt   DateTime  @map("updated_at")
+
+  sale Sale @relation(fields: [saleId], references: [id])
+
+  @@map("tax_document")
+}
+
+// ── CONFIGURACIÓN ─────────────────────────────────────────────
+model Configuracion {
+  id         String   @id
+  businessId String   @map("business_id")
+  clave      String
+  valor      String
+  createdAt  DateTime @map("created_at")
+  updatedAt  DateTime @map("updated_at")
+
+  business Business @relation(fields: [businessId], references: [id])
+
+  @@unique([businessId, clave])
+  @@map("configuracion")
+}
+
+// ── SYNC LOG ──────────────────────────────────────────────────
+model SyncLog {
+  id               String    @id
+  deviceId         String    @map("device_id")
+  businessId       String    @map("business_id")
+  tabla            String
+  registroId       String    @map("registro_id")
+  operacion        String
+  datosJson        String    @map("datos_json")
+  timestampLocal   DateTime  @map("timestamp_local")
+  timestampServidor DateTime? @map("timestamp_servidor")
+  estado           String    @default("PENDIENTE")
+  intentos         Int       @default(0)
+  error            String?
+  createdAt        DateTime  @map("created_at")
+  updatedAt        DateTime  @map("updated_at")
+
+  @@map("sync_log")
+}

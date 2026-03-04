@@ -7,6 +7,7 @@ import {
   crearProducto,
   actualizarProducto,
   actualizarPrecio,
+  desactivarProducto,
   type CategoriaRow,
   type HistorialPrecioRow,
 } from '../../db/queries/productos.queries'
@@ -29,6 +30,7 @@ export default function ProductoForm() {
   const [cargando, setCargando] = useState(true)
   const [precioNuevo, setPrecioNuevo] = useState('')
   const [mostrarActualizarPrecio, setMostrarActualizarPrecio] = useState(false)
+  const [confirmarEliminar, setConfirmarEliminar] = useState(false)
   const [errores, setErrores] = useState<{ nombre?: string; nombreCorto?: string; precio?: string }>({})
 
   function validar(): boolean {
@@ -117,6 +119,17 @@ export default function ProductoForm() {
           orden_pantalla: parseInt(ordenPantalla) || 0,
         })
       }
+      navigate('/productos')
+    } finally {
+      setGuardando(false)
+    }
+  }
+
+  const handleDesactivar = async () => {
+    if (!id) return
+    setGuardando(true)
+    try {
+      await desactivarProducto(id)
       navigate('/productos')
     } finally {
       setGuardando(false)
@@ -372,6 +385,39 @@ export default function ProductoForm() {
                 ))}
               </div>
             )}
+
+            {/* Zona de peligro */}
+            <div className="border-t border-red-900 pt-4 flex flex-col gap-2">
+              {!confirmarEliminar ? (
+                <button
+                  onClick={() => setConfirmarEliminar(true)}
+                  className="w-full h-12 border border-red-800 text-red-400 font-semibold rounded-xl text-sm"
+                >
+                  Desactivar producto
+                </button>
+              ) : (
+                <div className="flex flex-col gap-2">
+                  <p className="text-red-400 text-sm text-center">
+                    ¿Confirmas desactivar este producto?
+                  </p>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => setConfirmarEliminar(false)}
+                      className="flex-1 h-12 bg-slate-800 text-slate-300 font-semibold rounded-xl text-sm"
+                    >
+                      Cancelar
+                    </button>
+                    <button
+                      onClick={handleDesactivar}
+                      disabled={guardando}
+                      className="flex-1 h-12 bg-red-700 text-white font-bold rounded-xl text-sm"
+                    >
+                      Sí, desactivar
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
         )}
       </div>

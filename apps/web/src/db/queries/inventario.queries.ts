@@ -136,6 +136,34 @@ export async function obtenerMovimientosLote(batchId: string): Promise<Movimient
 
 // ── Mutaciones ────────────────────────────────────────────────────────────────
 
+export async function obtenerProveedorPorId(id: string): Promise<ProveedorRow | null> {
+  const rows = await consultarSQL<ProveedorRow>(
+    'SELECT * FROM supplier WHERE id = ?',
+    [id]
+  )
+  return rows[0] ?? null
+}
+
+export interface ActualizarProveedorData {
+  nombre?: string
+  celular?: string | null
+  tipo?: string
+  zona_origen?: string | null
+  comision_consignacion?: number | null
+}
+
+export async function actualizarProveedor(id: string, data: ActualizarProveedorData): Promise<void> {
+  const campos = Object.keys(data) as (keyof ActualizarProveedorData)[]
+  if (campos.length === 0) return
+  const now = fechaActual()
+  const sets = campos.map(k => `${k} = ?`).join(', ')
+  const valores: (string | number | null)[] = campos.map(k => data[k] as string | number | null)
+  await ejecutarSQL(
+    `UPDATE supplier SET ${sets}, updated_at = ? WHERE id = ?`,
+    [...valores, now, id]
+  )
+}
+
 export async function crearProveedor(data: NuevoProveedorData): Promise<string> {
   const id = generarId()
   const now = fechaActual()

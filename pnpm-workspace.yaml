@@ -1,3 +1,25 @@
 packages:
-  - 'apps/*'
-  - 'packages/*'
+  - apps/*
+  - packages/*
+
+allowBuild: '@prisma/client,@prisma/engines,prisma,esbuild'
+
+onlyBuiltDependencies:
+  - ','
+  - '@'
+  - /
+  - a
+  - b
+  - c
+  - d
+  - e
+  - g
+  - i
+  - l
+  - m
+  - n
+  - p
+  - r
+  - s
+  - t
+  - u

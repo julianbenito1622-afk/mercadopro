@@ -1,4 +1,6 @@
-import { Outlet, NavLink } from 'react-router-dom'
+import { useEffect } from 'react'
+import { Outlet, NavLink, useLocation } from 'react-router-dom'
+import { useDiaStore } from '../../stores/diaStore'
 
 const tabs = [
   { to: '/venta',      emoji: '🛒', label: 'Venta'    },
@@ -9,12 +11,27 @@ const tabs = [
 ]
 
 export default function AppLayout() {
+  const location = useLocation()
+  const { totalHoy, recargarTotal } = useDiaStore()
+
+  // Recargar total al cambiar de ruta y al enfocar la ventana
+  useEffect(() => { recargarTotal() }, [location.pathname, recargarTotal])
+  useEffect(() => {
+    window.addEventListener('focus', recargarTotal)
+    return () => window.removeEventListener('focus', recargarTotal)
+  }, [recargarTotal])
+
   return (
     <div className="flex flex-col h-screen bg-slate-950 text-slate-100">
       {/* Barra superior */}
       <header className="h-14 bg-slate-900 flex items-center justify-between px-4 shrink-0">
         <span className="text-emerald-400 font-bold text-lg">⚡ MercadoPro</span>
-        <span className="text-slate-100 font-bold text-base">S/ 0.00</span>
+        <div className="flex flex-col items-end">
+          <span className="text-slate-500 text-[10px] uppercase tracking-wide leading-none">Hoy</span>
+          <span className="text-slate-100 font-bold text-base leading-tight">
+            S/ {totalHoy.toFixed(2)}
+          </span>
+        </div>
       </header>
 
       {/* Contenido central */}
