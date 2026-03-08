@@ -44,7 +44,7 @@ jobs:
       # 7. Sincronizar Capacitor (copia dist/ → android/assets)
       - name: Capacitor sync
         working-directory: apps/web
-        run: npx cap sync android
+        run: ./node_modules/.bin/cap sync android --inline
 
       # 8. Permisos Gradle
       - name: Grant Gradle permissions

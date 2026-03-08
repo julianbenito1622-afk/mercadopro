@@ -1,0 +1,13 @@
+{
+  "appId": "com.mercadopro.app",
+  "appName": "MercadoPro",
+  "webDir": "dist",
+  "android": {
+    "buildOptions": {
+      "releaseType": "APK"
+    }
+  },
+  "server": {
+    "androidScheme": "https"
+  }
+}
