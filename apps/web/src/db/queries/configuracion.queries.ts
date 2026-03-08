@@ -44,6 +44,27 @@ export async function obtenerConfiguracion(businessId: string, clave: string): P
   return rows[0]?.valor ?? null
 }
 
+/**
+ * Elimina los datos de demo que venían pre-insertados en versiones anteriores.
+ * Se llama una sola vez durante el onboarding para limpiar la DB.
+ */
+export async function limpiarDatosDemo(): Promise<void> {
+  // Orden importa: respetar foreign keys (hijo antes que padre)
+  await ejecutarSQL(`DELETE FROM stock_movement WHERE id IN (
+    'mov-papa-entrada','mov-papa-venta','mov-tomate-entrada',
+    'mov-tomate-venta','mov-cebolla-entrada')`)
+  await ejecutarSQL(`DELETE FROM batch WHERE id IN (
+    'lote-papa-001','lote-tomate-001','lote-cebolla-001')`)
+  await ejecutarSQL(`DELETE FROM credit_profile WHERE id IN (
+    'cp-maria-garcia','cp-jose-lopez','cp-carmen-quispe','cp-roberto-diaz')`)
+  await ejecutarSQL(`DELETE FROM client WHERE id IN (
+    'cli-maria-garcia','cli-jose-lopez','cli-carmen-quispe','cli-roberto-diaz')`)
+  await ejecutarSQL(`DELETE FROM product WHERE id IN (
+    'prod-papa-blanca','prod-tomate','prod-cebolla','prod-zanahoria')`)
+  await ejecutarSQL(`DELETE FROM supplier WHERE id IN (
+    'sup-rodriguez','sup-distrib-limasur')`)
+}
+
 export async function actualizarConfiguracion(
   businessId: string,
   clave: string,

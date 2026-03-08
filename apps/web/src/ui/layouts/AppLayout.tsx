@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
 import { Outlet, NavLink, useLocation } from 'react-router-dom'
 import { useDiaStore } from '../../stores/diaStore'
+import { useAuthStore } from '../../stores/authStore'
 
 const tabs = [
   { to: '/venta',      emoji: '🛒', label: 'Venta'    },
@@ -13,6 +14,7 @@ const tabs = [
 export default function AppLayout() {
   const location = useLocation()
   const { totalHoy, recargarTotal } = useDiaStore()
+  const { userNombre, cerrarSesion } = useAuthStore()
 
   // Recargar total al cambiar de ruta y al enfocar la ventana
   useEffect(() => { recargarTotal() }, [location.pathname, recargarTotal])
@@ -25,7 +27,17 @@ export default function AppLayout() {
     <div className="flex flex-col h-screen bg-slate-950 text-slate-100">
       {/* Barra superior */}
       <header className="h-14 bg-slate-900 flex items-center justify-between px-4 shrink-0">
-        <span className="text-emerald-400 font-bold text-lg">⚡ MercadoPro</span>
+        <div className="flex flex-col">
+          <span className="text-emerald-400 font-bold text-base leading-tight">⚡ MercadoPro</span>
+          {userNombre && (
+            <button
+              onClick={cerrarSesion}
+              className="text-slate-600 text-[10px] leading-none text-left hover:text-slate-400 transition-colors"
+            >
+              {userNombre} · salir
+            </button>
+          )}
+        </div>
         <div className="flex flex-col items-end">
           <span className="text-slate-500 text-[10px] uppercase tracking-wide leading-none">Hoy</span>
           <span className="text-slate-100 font-bold text-base leading-tight">
