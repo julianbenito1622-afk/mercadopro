@@ -65,14 +65,21 @@ jobs:
       # 11. Build APK debug (listo para instalar sin firmar)
       - name: Build APK
         working-directory: apps/web/android
-        run: ./gradlew assembleDebug --no-daemon
-        env:
-          ANDROID_HOME: ${{ env.ANDROID_HOME }}
+        run: ./gradlew assembleDebug --no-daemon --stacktrace 2>&1 | tee /tmp/gradle.log; exit ${PIPESTATUS[0]}
 
-      # 11. Subir APK como artifact descargable
+      # 12. Subir APK como artifact descargable
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: MercadoPro-${{ github.run_number }}
           path: apps/web/android/app/build/outputs/apk/debug/app-debug.apk
           retention-days: 30
+
+      # 13. Subir log de Gradle si falla (para diagnóstico)
+      - name: Upload Gradle log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gradle-log-${{ github.run_number }}
+          path: /tmp/gradle.log
+          retention-days: 7
