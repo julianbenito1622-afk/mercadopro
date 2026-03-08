@@ -5,6 +5,57 @@ import crypto from 'crypto'
 type JwtPayload = { userId: string; businessId: string; branchId: string; rol: string }
 type Tx = Omit<PrismaClient, '$connect' | '$disconnect' | '$on' | '$transaction' | '$use' | '$extends'>
 
+const postLoteSchema = {
+  schema: {
+    body: {
+      type: 'object',
+      required: ['productId', 'cantidadInicialKg', 'costoUnitario', 'fechaVencimientoEstimada'],
+      properties: {
+        productId: { type: 'string', minLength: 1 },
+        supplierId: { type: 'string', minLength: 1 },
+        tipoIngreso: { type: 'string', enum: ['COMPRA_DIRECTA', 'CONSIGNACION', 'DEVOLUCION', 'AJUSTE'] },
+        cantidadInicialKg: { type: 'number', minimum: 0.001 },
+        costoUnitario: { type: 'number', minimum: 0 },
+        fechaVencimientoEstimada: { type: 'string', format: 'date' },
+        envaseCantidad: { type: 'integer', minimum: 0 },
+        notas: { type: 'string', maxLength: 500 },
+      },
+      additionalProperties: false,
+    },
+  },
+}
+
+const patchAjusteSchema = {
+  schema: {
+    body: {
+      type: 'object',
+      required: ['cantidadKg', 'motivo'],
+      properties: {
+        cantidadKg: { type: 'number' },
+        motivo: { type: 'string', minLength: 3, maxLength: 200 },
+      },
+      additionalProperties: false,
+    },
+  },
+}
+
+const postProveedorSchema = {
+  schema: {
+    body: {
+      type: 'object',
+      required: ['nombre'],
+      properties: {
+        nombre: { type: 'string', minLength: 2, maxLength: 100 },
+        celular: { type: 'string', pattern: '^[0-9]{9}$' },
+        tipo: { type: 'string', enum: ['DIRECTO', 'CONSIGNACION', 'MIXTO'] },
+        zonaOrigen: { type: 'string', maxLength: 100 },
+        comisionConsignacion: { type: 'number', minimum: 0, maximum: 100 },
+      },
+      additionalProperties: false,
+    },
+  },
+}
+
 export async function inventarioRoutes(fastify: FastifyInstance) {
   fastify.addHook('preHandler', async (request, reply) => {
     try {
@@ -57,10 +108,35 @@ export async function inventarioRoutes(fastify: FastifyInstance) {
       envaseCantidad?: number
       notas?: string
     }
-  }>('/lotes', async (request, reply) => {
+  }>('/lotes', postLoteSchema, async (request, reply) => {
     const { businessId, branchId, userId } = request.user as JwtPayload
     const now = new Date()
     const batchId = crypto.randomUUID()
+
+    // Validar que el producto exista y pertenezca al negocio
+    const producto = await fastify.prisma.product.findFirst({
+      where: { id: request.body.productId, businessId, activo: true },
+    })
+    if (!producto) {
+      return reply.code(422).send({ error: 'Producto no encontrado o inactivo' })
+    }
+
+    // Validar proveedor si se envió
+    if (request.body.supplierId) {
+      const proveedor = await fastify.prisma.supplier.findFirst({
+        where: { id: request.body.supplierId, businessId },
+      })
+      if (!proveedor) {
+        return reply.code(422).send({ error: 'Proveedor no encontrado' })
+      }
+    }
+
+    // Validar que la fecha de vencimiento sea futura
+    const fechaVenc = new Date(request.body.fechaVencimientoEstimada)
+    if (fechaVenc <= now) {
+      return reply.code(400).send({ error: 'La fecha de vencimiento estimada debe ser una fecha futura' })
+    }
+
     const costoTotal = request.body.cantidadInicialKg * request.body.costoUnitario
 
     const lote = await fastify.prisma.$transaction(async (tx: Tx) => {
@@ -78,7 +154,7 @@ export async function inventarioRoutes(fastify: FastifyInstance) {
           costoUnitario: request.body.costoUnitario,
           costoTotal,
           envaseCantidad: request.body.envaseCantidad ?? 0,
-          fechaVencimientoEstimada: new Date(request.body.fechaVencimientoEstimada),
+          fechaVencimientoEstimada: fechaVenc,
           estado: 'FRESCO',
           notas: request.body.notas,
           syncStatus: 'SYNCED',
@@ -112,7 +188,7 @@ export async function inventarioRoutes(fastify: FastifyInstance) {
   fastify.patch<{
     Params: { id: string }
     Body: { cantidadKg: number; motivo: string }
-  }>('/lotes/:id/ajuste', async (request, reply) => {
+  }>('/lotes/:id/ajuste', patchAjusteSchema, async (request, reply) => {
     const { businessId, userId } = request.user as JwtPayload
     const now = new Date()
 
@@ -122,6 +198,18 @@ export async function inventarioRoutes(fastify: FastifyInstance) {
     if (!lote) return reply.code(404).send({ error: 'Lote no encontrado' })
 
     const nuevaCantidad = lote.cantidadActualKg + request.body.cantidadKg
+
+    // Validar que el ajuste no resulte en stock negativo
+    if (nuevaCantidad < 0) {
+      return reply.code(422).send({
+        error: 'El ajuste resultaría en stock negativo',
+        detalle: {
+          stockActual: lote.cantidadActualKg,
+          ajuste: request.body.cantidadKg,
+          resultadoSiAplicara: nuevaCantidad,
+        },
+      })
+    }
 
     await fastify.prisma.$transaction(async (tx: Tx) => {
       await tx.batch.update({
@@ -159,7 +247,7 @@ export async function inventarioRoutes(fastify: FastifyInstance) {
   // POST /proveedores
   fastify.post<{
     Body: { nombre: string; celular?: string; tipo?: string; zonaOrigen?: string; comisionConsignacion?: number }
-  }>('/proveedores', async (request, reply) => {
+  }>('/proveedores', postProveedorSchema, async (request, reply) => {
     const { businessId } = request.user as JwtPayload
     const now = new Date()
     const proveedor = await fastify.prisma.supplier.create({

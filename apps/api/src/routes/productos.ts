@@ -3,6 +3,45 @@ import crypto from 'crypto'
 
 type JwtPayload = { userId: string; businessId: string; branchId: string; rol: string }
 
+const postProductoSchema = {
+  schema: {
+    body: {
+      type: 'object',
+      required: ['categoryId', 'nombre', 'nombreCorto', 'precioVentaActual'],
+      properties: {
+        categoryId: { type: 'string', minLength: 1 },
+        nombre: { type: 'string', minLength: 2, maxLength: 100 },
+        nombreCorto: { type: 'string', minLength: 1, maxLength: 20 },
+        unidadVentaPrincipal: { type: 'string', enum: ['KG', 'UNIDAD', 'CAJA', 'BOLSA'] },
+        precioVentaActual: { type: 'number', minimum: 0.01 },
+        requierePesaje: { type: 'boolean' },
+        vidaUtilDias: { type: 'integer', minimum: 1 },
+        esPantallaRapida: { type: 'boolean' },
+        ordenPantalla: { type: 'integer', minimum: 0 },
+      },
+      additionalProperties: false,
+    },
+  },
+}
+
+const patchProductoSchema = {
+  schema: {
+    body: {
+      type: 'object',
+      minProperties: 1,
+      properties: {
+        nombre: { type: 'string', minLength: 2, maxLength: 100 },
+        nombreCorto: { type: 'string', minLength: 1, maxLength: 20 },
+        precioVentaActual: { type: 'number', minimum: 0.01 },
+        esPantallaRapida: { type: 'boolean' },
+        ordenPantalla: { type: 'integer', minimum: 0 },
+        activo: { type: 'boolean' },
+      },
+      additionalProperties: false,
+    },
+  },
+}
+
 export async function productosRoutes(fastify: FastifyInstance) {
   fastify.addHook('preHandler', async (request, reply) => {
     try {
@@ -46,9 +85,18 @@ export async function productosRoutes(fastify: FastifyInstance) {
       esPantallaRapida?: boolean
       ordenPantalla?: number
     }
-  }>('/productos', async (request, reply) => {
+  }>('/productos', postProductoSchema, async (request, reply) => {
     const { businessId, userId } = request.user as JwtPayload
     const now = new Date()
+
+    // Validar que la categoría exista y pertenezca al negocio
+    const categoria = await fastify.prisma.category.findFirst({
+      where: { id: request.body.categoryId, businessId },
+    })
+    if (!categoria) {
+      return reply.code(422).send({ error: 'Categoría no encontrada' })
+    }
+
     const producto = await fastify.prisma.product.create({
       data: {
         id: crypto.randomUUID(),
@@ -73,7 +121,7 @@ export async function productosRoutes(fastify: FastifyInstance) {
       ordenPantalla: number
       activo: boolean
     }>
-  }>('/productos/:id', async (request, reply) => {
+  }>('/productos/:id', patchProductoSchema, async (request, reply) => {
     const { businessId, userId } = request.user as JwtPayload
     const now = new Date()
 

@@ -5,6 +5,39 @@ import crypto from 'crypto'
 type JwtPayload = { userId: string; businessId: string; branchId: string; rol: string }
 type Tx = Omit<PrismaClient, '$connect' | '$disconnect' | '$on' | '$transaction' | '$use' | '$extends'>
 
+const saleItemSchema = {
+  type: 'object',
+  required: ['productId', 'cantidad', 'unidadVenta', 'pesoNetoKg', 'precioUnitario', 'subtotal'],
+  properties: {
+    productId: { type: 'string', minLength: 1 },
+    batchId: { type: 'string', minLength: 1 },
+    cantidad: { type: 'number', minimum: 0.001 },
+    unidadVenta: { type: 'string', minLength: 1 },
+    pesoNetoKg: { type: 'number', minimum: 0 },
+    precioUnitario: { type: 'number', minimum: 0 },
+    subtotal: { type: 'number', minimum: 0 },
+  },
+  additionalProperties: false,
+}
+
+const postVentaSchema = {
+  schema: {
+    body: {
+      type: 'object',
+      required: ['items', 'metodoPago', 'total', 'montoPagado'],
+      properties: {
+        clientId: { type: 'string', minLength: 1 },
+        items: { type: 'array', items: saleItemSchema, minItems: 1 },
+        metodoPago: { type: 'string', enum: ['EFECTIVO', 'YAPE', 'CREDITO'] },
+        total: { type: 'number', minimum: 0.01 },
+        montoPagado: { type: 'number', minimum: 0 },
+        notas: { type: 'string', maxLength: 500 },
+      },
+      additionalProperties: false,
+    },
+  },
+}
+
 export async function ventasRoutes(fastify: FastifyInstance) {
   fastify.addHook('preHandler', async (request, reply) => {
     try {
@@ -36,7 +69,7 @@ export async function ventasRoutes(fastify: FastifyInstance) {
     })
   })
 
-  // POST /ventas — Registrar venta (desde sync o directa)
+  // POST /ventas — Registrar venta
   fastify.post<{
     Body: {
       clientId?: string
@@ -54,10 +87,78 @@ export async function ventasRoutes(fastify: FastifyInstance) {
       montoPagado: number
       notas?: string
     }
-  }>('/ventas', async (request, reply) => {
+  }>('/ventas', postVentaSchema, async (request, reply) => {
     const { businessId, branchId, userId } = request.user as JwtPayload
+    const { clientId, items, metodoPago, total, montoPagado } = request.body
     const now = new Date()
     const saleId = crypto.randomUUID()
+
+    // Validar que montoPagado no supere el total en ventas no-crédito
+    if (metodoPago !== 'CREDITO' && montoPagado < total) {
+      return reply.code(400).send({ error: 'Monto pagado insuficiente para el total de la venta' })
+    }
+
+    // Validar clientId si se envió
+    if (clientId) {
+      const cliente = await fastify.prisma.client.findFirst({
+        where: { id: clientId, businessId, activo: true },
+        include: { creditProfile: true },
+      })
+      if (!cliente) {
+        return reply.code(422).send({ error: 'Cliente no encontrado o inactivo' })
+      }
+
+      // Validar límite de crédito antes de crear la venta
+      if (metodoPago === 'CREDITO') {
+        const montoPendiente = total - montoPagado
+        const perfil = cliente.creditProfile
+
+        if (!perfil) {
+          return reply.code(422).send({ error: 'El cliente no tiene perfil de crédito configurado' })
+        }
+        if (perfil.estado === 'BLOQUEADO') {
+          return reply.code(422).send({ error: 'El cliente tiene el crédito bloqueado' })
+        }
+        if (perfil.limiteCredito > 0 && perfil.saldoActual + montoPendiente > perfil.limiteCredito) {
+          return reply.code(422).send({
+            error: 'La venta supera el límite de crédito del cliente',
+            detalle: {
+              limiteCredito: perfil.limiteCredito,
+              saldoActual: perfil.saldoActual,
+              montoSolicitado: montoPendiente,
+              disponible: Math.max(0, perfil.limiteCredito - perfil.saldoActual),
+            },
+          })
+        }
+      }
+    } else if (metodoPago === 'CREDITO') {
+      return reply.code(400).send({ error: 'Se requiere clientId para ventas a crédito' })
+    }
+
+    // Validar que cada productId y batchId existan y pertenezcan al negocio
+    for (const item of items) {
+      const producto = await fastify.prisma.product.findFirst({
+        where: { id: item.productId, businessId, activo: true },
+      })
+      if (!producto) {
+        return reply.code(422).send({ error: `Producto no encontrado o inactivo: ${item.productId}` })
+      }
+
+      if (item.batchId) {
+        const lote = await fastify.prisma.batch.findFirst({
+          where: { id: item.batchId, businessId },
+        })
+        if (!lote) {
+          return reply.code(422).send({ error: `Lote no encontrado: ${item.batchId}` })
+        }
+        if (lote.cantidadActualKg < item.pesoNetoKg) {
+          return reply.code(422).send({
+            error: `Stock insuficiente en lote ${item.batchId}`,
+            detalle: { stockDisponible: lote.cantidadActualKg, solicitado: item.pesoNetoKg },
+          })
+        }
+      }
+    }
 
     // Obtener correlativo
     const configCorrelativo = await fastify.prisma.configuracion.findFirst({
@@ -66,26 +167,23 @@ export async function ventasRoutes(fastify: FastifyInstance) {
     const correlativo = parseInt(configCorrelativo?.valor ?? '0') + 1
     const numeroTicket = `T-${String(correlativo).padStart(6, '0')}`
 
-    const montoPendiente = request.body.metodoPago === 'CREDITO'
-      ? request.body.total - request.body.montoPagado
-      : 0
+    const montoPendiente = metodoPago === 'CREDITO' ? total - montoPagado : 0
 
     const venta = await fastify.prisma.$transaction(async (tx: Tx) => {
-      // Crear venta
       const sale = await tx.sale.create({
         data: {
           id: saleId,
           businessId,
           branchId,
           userId,
-          clientId: request.body.clientId,
+          clientId,
           numeroTicket,
           fecha: now,
-          subtotal: request.body.total,
-          total: request.body.total,
-          metodoPago: request.body.metodoPago,
-          estadoPago: request.body.metodoPago === 'CREDITO' ? 'CREDITO_PENDIENTE' : 'PAGADO',
-          montoPagado: request.body.montoPagado,
+          subtotal: total,
+          total,
+          metodoPago,
+          estadoPago: metodoPago === 'CREDITO' ? 'CREDITO_PENDIENTE' : 'PAGADO',
+          montoPagado,
           montoPendiente,
           notas: request.body.notas,
           syncStatus: 'SYNCED',
@@ -95,8 +193,7 @@ export async function ventasRoutes(fastify: FastifyInstance) {
         },
       })
 
-      // Crear items
-      for (const item of request.body.items) {
+      for (const item of items) {
         const itemId = crypto.randomUUID()
         await tx.saleItem.create({
           data: {
@@ -115,7 +212,6 @@ export async function ventasRoutes(fastify: FastifyInstance) {
           },
         })
 
-        // Descontar stock del lote si aplica
         if (item.batchId) {
           await tx.batch.update({
             where: { id: item.batchId },
@@ -143,22 +239,24 @@ export async function ventasRoutes(fastify: FastifyInstance) {
       }
 
       // Actualizar saldo de crédito del cliente
-      if (request.body.metodoPago === 'CREDITO' && request.body.clientId) {
+      if (metodoPago === 'CREDITO' && clientId) {
         await tx.creditProfile.updateMany({
-          where: { clientId: request.body.clientId },
+          where: { clientId },
           data: {
             saldoActual: { increment: montoPendiente },
-            totalHistoricoCredito: { increment: request.body.total },
+            totalHistoricoCredito: { increment: total },
             updatedAt: now,
           },
         })
       }
 
       // Actualizar correlativo
-      await tx.configuracion.update({
-        where: { id: configCorrelativo?.id },
-        data: { valor: String(correlativo), updatedAt: now },
-      })
+      if (configCorrelativo?.id) {
+        await tx.configuracion.update({
+          where: { id: configCorrelativo.id },
+          data: { valor: String(correlativo), updatedAt: now },
+        })
+      }
 
       return sale
     })
