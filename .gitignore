@@ -37,3 +37,9 @@ Thumbs.db
 # Database (SQLite dev files)
 *.db
 *.sqlite
+
+# Android build outputs
+apps/web/android/.gradle/
+apps/web/android/app/build/
+apps/web/android/build/
+apps/web/android/local.properties
