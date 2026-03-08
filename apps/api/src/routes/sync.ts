@@ -39,6 +39,9 @@ const TABLE_TO_MODEL: Record<string, string> = {
   consignment_batch: 'consignmentBatch',
 }
 
+// Límite de registros por tabla en pull
+const PULL_LIMIT_POR_TABLA = 500
+
 type JwtPayload = {
   userId: string
   businessId: string
@@ -47,7 +50,6 @@ type JwtPayload = {
 }
 
 export async function syncRoutes(fastify: FastifyInstance) {
-  // Middleware de autenticación para todas las rutas de sync
   fastify.addHook('preHandler', async (request, reply) => {
     try {
       await request.jwtVerify()
@@ -73,9 +75,9 @@ export async function syncRoutes(fastify: FastifyInstance) {
     const { deviceId, registros } = request.body
     const now = new Date()
 
-    const resultados: Array<{ id: string; estado: 'OK' | 'ERROR'; error?: string }> = []
+    const resultados: Array<{ id: string; estado: 'OK' | 'OMITIDO' | 'ERROR'; error?: string; motivo?: string }> = []
 
-    // Ordenar registros según dependencias
+    // Ordenar registros según dependencias FK
     const ordenados = [...registros].sort((a, b) => {
       const ia = SYNC_ORDER.indexOf(a.tabla)
       const ib = SYNC_ORDER.indexOf(b.tabla)
@@ -90,27 +92,64 @@ export async function syncRoutes(fastify: FastifyInstance) {
           continue
         }
 
-        // Inyectar businessId para seguridad (evitar que un device escriba en otro negocio)
-        const datos = {
-          ...registro.datos,
-          syncStatus: 'SYNCED',
-        }
-
         // Verificar que el registro pertenece al negocio del usuario
+        const datos = { ...registro.datos, syncStatus: 'SYNCED' }
         if ('businessId' in datos && datos.businessId !== businessId) {
           resultados.push({ id: registro.id, estado: 'ERROR', error: 'Registro no pertenece a este negocio' })
           continue
         }
 
         const prismaModel = (fastify.prisma as unknown as Record<string, unknown>)[modelo] as {
+          findUnique: (args: unknown) => Promise<{ updatedAt?: Date } | null>
           upsert: (args: unknown) => Promise<unknown>
           delete: (args: unknown) => Promise<unknown>
         }
 
         if (registro.operacion === 'DELETE') {
-          await prismaModel.delete({ where: { id: registro.datos['id'] } })
+          // Para DELETE: verificar que exista y pertenezca al negocio
+          const existente = await prismaModel.findUnique({ where: { id: registro.datos['id'] } })
+          if (existente) {
+            await prismaModel.delete({ where: { id: registro.datos['id'] } })
+          }
         } else {
-          // Upsert: INSERT o UPDATE
+          // Resolución de conflictos: last-write-wins basado en updatedAt
+          const existente = await prismaModel.findUnique({ where: { id: registro.datos['id'] } })
+
+          if (existente?.updatedAt) {
+            const tsServidor = new Date(existente.updatedAt).getTime()
+            const tsCliente = new Date(registro.timestampLocal).getTime()
+
+            // Si el servidor tiene una versión más reciente, omitir el cambio del cliente
+            if (tsServidor > tsCliente) {
+              resultados.push({
+                id: registro.id,
+                estado: 'OMITIDO',
+                motivo: `Versión del servidor más reciente (${existente.updatedAt.toISOString()} > ${registro.timestampLocal})`,
+              })
+
+              // Registrar en log como omitido
+              await fastify.prisma.syncLog.create({
+                data: {
+                  id: crypto.randomUUID(),
+                  deviceId,
+                  businessId,
+                  tabla: registro.tabla,
+                  registroId: String(registro.datos['id']),
+                  operacion: registro.operacion,
+                  datosJson: JSON.stringify(registro.datos),
+                  timestampLocal: new Date(registro.timestampLocal),
+                  timestampServidor: now,
+                  estado: 'OMITIDO',
+                  createdAt: now,
+                  updatedAt: now,
+                },
+              }).catch(() => {/* log no crítico */})
+
+              continue
+            }
+          }
+
+          // Aplicar cambio del cliente (es más reciente o no existe en servidor)
           await prismaModel.upsert({
             where: { id: registro.datos['id'] },
             create: datos,
@@ -141,7 +180,6 @@ export async function syncRoutes(fastify: FastifyInstance) {
         const error = err instanceof Error ? err.message : 'Error desconocido'
         resultados.push({ id: registro.id, estado: 'ERROR', error })
 
-        // Registrar fallo en log
         await fastify.prisma.syncLog.create({
           data: {
             id: crypto.randomUUID(),
@@ -157,25 +195,31 @@ export async function syncRoutes(fastify: FastifyInstance) {
             createdAt: now,
             updatedAt: now,
           },
-        })
+        }).catch(() => {/* log no crítico */})
       }
     }
 
     const exitosos = resultados.filter((r) => r.estado === 'OK').length
-    return { sincronizados: exitosos, total: registros.length, resultados }
+    const omitidos = resultados.filter((r) => r.estado === 'OMITIDO').length
+    return { sincronizados: exitosos, omitidos, total: registros.length, resultados }
   })
 
-  // GET /sync/pull — Obtener cambios del servidor desde última sincronización
+  // GET /sync/pull — Cambios del servidor con paginación por tabla
   fastify.get<{
-    Querystring: { desde?: string; tablas?: string }
-  }>('/sync/pull', async (request, reply) => {
+    Querystring: { desde?: string; tablas?: string; limite?: string }
+  }>('/sync/pull', async (request) => {
     const { businessId } = request.user as JwtPayload
     const { desde, tablas } = request.query
+    const limitePorTabla = Math.min(
+      PULL_LIMIT_POR_TABLA,
+      Math.max(1, parseInt(request.query.limite ?? String(PULL_LIMIT_POR_TABLA)))
+    )
 
     const desdeDate = desde ? new Date(desde) : new Date(0)
     const tablasFilter = tablas ? tablas.split(',') : SYNC_ORDER
 
     const cambios: Record<string, unknown[]> = {}
+    const totalesPorTabla: Record<string, number> = {}
 
     for (const tabla of tablasFilter) {
       const modelo = TABLE_TO_MODEL[tabla]
@@ -183,29 +227,47 @@ export async function syncRoutes(fastify: FastifyInstance) {
 
       const prismaModel = (fastify.prisma as unknown as Record<string, unknown>)[modelo] as {
         findMany: (args: unknown) => Promise<unknown[]>
+        count: (args: unknown) => Promise<number>
       }
 
       try {
-        // Buscar registros actualizados desde la última sync, filtrados por businessId
         const whereClause: Record<string, unknown> = {
           updatedAt: { gt: desdeDate },
         }
 
-        // Solo tablas con businessId directo
+        // Filtrar por businessId en tablas que lo tienen directamente
         if (['category', 'supplier', 'product', 'client', 'batch', 'consignment', 'containerType'].includes(modelo)) {
           whereClause['businessId'] = businessId
         }
 
-        const registros = await prismaModel.findMany({ where: whereClause })
+        const [registros, total] = await Promise.all([
+          prismaModel.findMany({
+            where: whereClause,
+            orderBy: { updatedAt: 'asc' },
+            take: limitePorTabla,
+          }),
+          prismaModel.count({ where: whereClause }),
+        ])
+
         cambios[tabla] = registros
+        totalesPorTabla[tabla] = total
       } catch {
         cambios[tabla] = []
+        totalesPorTabla[tabla] = 0
       }
     }
+
+    // Indicar si hay más datos (el cliente debe hacer otro pull con cursor actualizado)
+    const hayMas = Object.entries(totalesPorTabla).some(([tabla, total]) => {
+      return total > (cambios[tabla]?.length ?? 0)
+    })
 
     return {
       timestamp: new Date().toISOString(),
       cambios,
+      totalesPorTabla,
+      hayMas,
+      limitePorTabla,
     }
   })
 
@@ -216,12 +278,19 @@ export async function syncRoutes(fastify: FastifyInstance) {
     const { businessId } = request.user as JwtPayload
     const { deviceId } = request.query
 
-    const [pendientes, errores, ultima] = await Promise.all([
+    if (!deviceId) {
+      return reply.code(400).send({ error: 'deviceId es requerido' })
+    }
+
+    const [pendientes, errores, omitidos, ultima] = await Promise.all([
       fastify.prisma.syncLog.count({
         where: { businessId, deviceId, estado: 'PENDIENTE' },
       }),
       fastify.prisma.syncLog.count({
         where: { businessId, deviceId, estado: 'ERROR' },
+      }),
+      fastify.prisma.syncLog.count({
+        where: { businessId, deviceId, estado: 'OMITIDO' },
       }),
       fastify.prisma.syncLog.findFirst({
         where: { businessId, deviceId, estado: 'APLICADO' },
@@ -232,6 +301,7 @@ export async function syncRoutes(fastify: FastifyInstance) {
     return {
       pendientes,
       errores,
+      omitidos,
       ultimaSincronizacion: ultima?.timestampServidor ?? null,
     }
   })

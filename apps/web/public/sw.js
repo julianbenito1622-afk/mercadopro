@@ -1,4 +1,7 @@
-const CACHE_NAME = 'mercadopro-v1'
+// Versión inyectada en build por Vite (vite.config.ts → generateBundle).
+// En desarrollo se usa 'dev'. En producción se reemplaza con el hash del build.
+const APP_VERSION = self.__APP_VERSION__ ?? 'dev'
+const CACHE_NAME = `mercadopro-${APP_VERSION}`
 
 // Assets críticos para que la app cargue offline
 const STATIC_ASSETS = [
@@ -14,12 +17,17 @@ self.addEventListener('install', (event) => {
   self.skipWaiting()
 })
 
-// ── Activate: limpiar caches viejos ────────────────────────────────────────
+// ── Activate: limpiar caches de versiones anteriores ───────────────────────
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys().then(keys =>
       Promise.all(
-        keys.filter(k => k !== CACHE_NAME).map(k => caches.delete(k))
+        keys
+          .filter(k => k.startsWith('mercadopro-') && k !== CACHE_NAME)
+          .map(k => {
+            console.log('[SW] Eliminando cache viejo:', k)
+            return caches.delete(k)
+          })
       )
     )
   )
@@ -34,7 +42,7 @@ self.addEventListener('fetch', (event) => {
   // Solo interceptar requests del mismo origen
   if (url.origin !== self.location.origin) return
 
-  // Network-first para llamadas a la API (cuando exista backend)
+  // Network-first para llamadas a la API
   if (url.pathname.startsWith('/api/')) {
     event.respondWith(
       fetch(request).catch(() => caches.match(request))
