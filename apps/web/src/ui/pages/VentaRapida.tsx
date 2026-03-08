@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { obtenerClientesPantalla, type ClienteRow } from '../../db/queries/clientes.queries'
-import { obtenerProductosPantalla, type ProductoRow } from '../../db/queries/productos.queries'
+import { obtenerProductosPantalla, obtenerProductos, type ProductoRow } from '../../db/queries/productos.queries'
 import { registrarVenta } from '../../db/queries/ventas.queries'
 import { calcularSubtotal } from '../../core/ventas/ventaUtils'
 import { useVentaStore } from '../../stores/ventaStore'
@@ -46,6 +46,8 @@ export default function VentaRapida() {
 
   const [clientes, setClientes] = useState<ClienteRow[]>([])
   const [productos, setProductos] = useState<ProductoRow[]>([])
+  const [todosProductos, setTodosProductos] = useState<ProductoRow[]>([])
+  const [busqueda, setBusqueda] = useState('')
   const [panel, setPanel] = useState<Panel>('cerrado')
   const [productoActual, setProductoActual] = useState<ProductoRow | null>(null)
   const [pesoInput, setPesoInput] = useState('0')
@@ -55,10 +57,14 @@ export default function VentaRapida() {
 
   useEffect(() => {
     const cargar = async () => {
-      const c = await obtenerClientesPantalla('local')
-      const p = await obtenerProductosPantalla('local')
+      const [c, p, todos] = await Promise.all([
+        obtenerClientesPantalla('local'),
+        obtenerProductosPantalla('local'),
+        obtenerProductos('local'),
+      ])
       setClientes(c)
       setProductos(p)
+      setTodosProductos(todos)
       setCargando(false)
     }
     cargar()
@@ -126,6 +132,13 @@ export default function VentaRapida() {
 
   const total = calcularTotal()
   const hayItems = items.length > 0
+
+  const productosMostrados = busqueda.trim().length === 0
+    ? productos
+    : todosProductos.filter(p =>
+        p.nombre.toLowerCase().includes(busqueda.toLowerCase()) ||
+        p.nombre_corto.toLowerCase().includes(busqueda.toLowerCase())
+      )
 
   // ── Flash de éxito ──────────────────────────────────────────────────────────
   if (flashExito) {
@@ -272,27 +285,47 @@ export default function VentaRapida() {
           <div className="flex items-center justify-between px-4 py-4 border-b border-slate-800">
             <h2 className="text-lg font-bold text-slate-100">Elige producto</h2>
             <button
-              onClick={() => setPanel('cerrado')}
+              onClick={() => { setPanel('cerrado'); setBusqueda('') }}
               className="flex items-center gap-1 h-10 px-3 rounded-lg text-slate-400 text-sm font-semibold border border-slate-700"
             >
               ✕ Cerrar
             </button>
           </div>
 
+          {/* Buscador */}
+          <div className="px-4 py-3 border-b border-slate-800">
+            <input
+              type="text"
+              value={busqueda}
+              onChange={e => setBusqueda(e.target.value)}
+              placeholder="Buscar producto..."
+              autoFocus
+              className="w-full h-11 bg-slate-800 border border-slate-700 rounded-xl px-4 text-slate-100 placeholder-slate-500 text-sm outline-none focus:border-emerald-500"
+            />
+            {busqueda.trim().length === 0 && (
+              <p className="text-slate-600 text-xs mt-2 text-center">
+                Mostrando pantalla rápida · Escribe para buscar todos los productos
+              </p>
+            )}
+          </div>
+
           {/* Grid de productos */}
           <div className="flex-1 overflow-y-auto p-4">
-            {productos.length === 0 ? (
+            {productosMostrados.length === 0 ? (
               <p className="text-slate-500 text-center pt-10">
-                No hay productos en pantalla rápida
+                {busqueda.trim().length > 0
+                  ? `Sin resultados para "${busqueda}"`
+                  : 'No hay productos en pantalla rápida'}
               </p>
             ) : (
               <div className="grid grid-cols-3 gap-3">
-                {productos.map(p => (
+                {productosMostrados.map(p => (
                   <button
                     key={p.id}
                     onClick={() => {
                       setProductoActual(p)
                       setPesoInput('0')
+                      setBusqueda('')
                       setPanel('peso')
                     }}
                     className="flex flex-col items-center justify-center min-h-[72px] bg-slate-800 border border-slate-700 rounded-xl px-2 py-3 gap-1"
@@ -303,6 +336,9 @@ export default function VentaRapida() {
                     <span className="text-emerald-400 text-xs font-semibold">
                       S/{p.precio_venta_actual.toFixed(2)}/kg
                     </span>
+                    {p.es_pantalla_rapida === 0 && (
+                      <span className="text-slate-500 text-[9px]">búsqueda</span>
+                    )}
                   </button>
                 ))}
               </div>
