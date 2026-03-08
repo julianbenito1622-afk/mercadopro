@@ -33,29 +33,33 @@ jobs:
         with:
           version: 10
 
-      # 5. Instalar dependencias
+      # 5. Instalar Capacitor CLI global (evita problemas de permisos en Linux)
+      - name: Install Capacitor CLI
+        run: npm install -g @capacitor/cli
+
+      # 6. Instalar dependencias del monorepo
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      # 6. Build del frontend (React → dist/)
+      # 7. Build del frontend (React → dist/)
       - name: Build web app
         run: pnpm --filter @mercadopro/web build
 
-      # 7. Sincronizar Capacitor (copia dist/ → android/assets)
+      # 8. Sincronizar Capacitor (copia dist/ → android/assets)
       - name: Capacitor sync
         working-directory: apps/web
-        run: ./node_modules/.bin/cap sync android --inline
+        run: cap sync android
 
-      # 8. Permisos Gradle
+      # 9. Permisos Gradle
       - name: Grant Gradle permissions
         run: chmod +x apps/web/android/gradlew
 
-      # 9. Build APK debug (listo para instalar sin firmar)
+      # 10. Build APK debug (listo para instalar sin firmar)
       - name: Build APK
         working-directory: apps/web/android
         run: ./gradlew assembleDebug --no-daemon
 
-      # 10. Subir APK como artifact descargable
+      # 11. Subir APK como artifact descargable
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
