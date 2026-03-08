@@ -47,8 +47,8 @@ export async function ventasRoutes(fastify: FastifyInstance) {
     }
   })
 
-  // GET /ventas — Ventas del día
-  fastify.get<{ Querystring: { fecha?: string } }>('/ventas', async (request) => {
+  // GET /ventas — Ventas del día con paginación
+  fastify.get<{ Querystring: { fecha?: string; page?: string; limit?: string } }>('/ventas', async (request) => {
     const { businessId } = request.user as JwtPayload
     const fecha = request.query.fecha ? new Date(request.query.fecha) : new Date()
     const inicioDia = new Date(fecha)
@@ -56,17 +56,27 @@ export async function ventasRoutes(fastify: FastifyInstance) {
     const finDia = new Date(fecha)
     finDia.setHours(23, 59, 59, 999)
 
-    return fastify.prisma.sale.findMany({
-      where: {
-        businessId,
-        fecha: { gte: inicioDia, lte: finDia },
-      },
-      include: {
-        client: { select: { nombre: true, nombreCorto: true } },
-        saleItems: { include: { product: { select: { nombre: true, nombreCorto: true } } } },
-      },
-      orderBy: { fecha: 'desc' },
-    })
+    const page = Math.max(1, parseInt(request.query.page ?? '1'))
+    const limit = Math.min(100, Math.max(1, parseInt(request.query.limit ?? '50')))
+    const skip = (page - 1) * limit
+
+    const where = { businessId, fecha: { gte: inicioDia, lte: finDia } }
+
+    const [items, total] = await Promise.all([
+      fastify.prisma.sale.findMany({
+        where,
+        include: {
+          client: { select: { nombre: true, nombreCorto: true } },
+          saleItems: { include: { product: { select: { nombre: true, nombreCorto: true } } } },
+        },
+        orderBy: { fecha: 'desc' },
+        skip,
+        take: limit,
+      }),
+      fastify.prisma.sale.count({ where }),
+    ])
+
+    return { items, total, page, limit, totalPages: Math.ceil(total / limit) }
   })
 
   // POST /ventas — Registrar venta

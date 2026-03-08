@@ -66,19 +66,30 @@ export async function inventarioRoutes(fastify: FastifyInstance) {
   })
 
   // GET /lotes
-  fastify.get<{ Querystring: { estado?: string } }>('/lotes', async (request) => {
+  fastify.get<{ Querystring: { estado?: string; page?: string; limit?: string } }>('/lotes', async (request) => {
     const { businessId } = request.user as JwtPayload
+    const page = Math.max(1, parseInt(request.query.page ?? '1'))
+    const limit = Math.min(100, Math.max(1, parseInt(request.query.limit ?? '50')))
+    const skip = (page - 1) * limit
+
     const where: Record<string, unknown> = { businessId }
     if (request.query.estado) where['estado'] = request.query.estado
 
-    return fastify.prisma.batch.findMany({
-      where,
-      include: {
-        product: { select: { nombre: true, nombreCorto: true, unidadVentaPrincipal: true } },
-        supplier: { select: { nombre: true } },
-      },
-      orderBy: { fechaVencimientoEstimada: 'asc' },
-    })
+    const [items, total] = await Promise.all([
+      fastify.prisma.batch.findMany({
+        where,
+        include: {
+          product: { select: { nombre: true, nombreCorto: true, unidadVentaPrincipal: true } },
+          supplier: { select: { nombre: true } },
+        },
+        orderBy: { fechaVencimientoEstimada: 'asc' },
+        skip,
+        take: limit,
+      }),
+      fastify.prisma.batch.count({ where }),
+    ])
+
+    return { items, total, page, limit, totalPages: Math.ceil(total / limit) }
   })
 
   // GET /lotes/:id

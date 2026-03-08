@@ -56,13 +56,33 @@ export async function clientesRoutes(fastify: FastifyInstance) {
   })
 
   // GET /clientes
-  fastify.get('/clientes', async (request) => {
+  fastify.get<{ Querystring: { page?: string; limit?: string; buscar?: string } }>('/clientes', async (request) => {
     const { businessId } = request.user as JwtPayload
-    return fastify.prisma.client.findMany({
-      where: { businessId, activo: true },
-      include: { creditProfile: true },
-      orderBy: [{ esFrecuente: 'desc' }, { nombre: 'asc' }],
-    })
+    const page = Math.max(1, parseInt(request.query.page ?? '1'))
+    const limit = Math.min(100, Math.max(1, parseInt(request.query.limit ?? '50')))
+    const skip = (page - 1) * limit
+
+    const where: Record<string, unknown> = { businessId, activo: true }
+    if (request.query.buscar) {
+      where['OR'] = [
+        { nombre: { contains: request.query.buscar, mode: 'insensitive' } },
+        { nombreCorto: { contains: request.query.buscar, mode: 'insensitive' } },
+        { celular: { contains: request.query.buscar } },
+      ]
+    }
+
+    const [items, total] = await Promise.all([
+      fastify.prisma.client.findMany({
+        where,
+        include: { creditProfile: true },
+        orderBy: [{ esFrecuente: 'desc' }, { nombre: 'asc' }],
+        skip,
+        take: limit,
+      }),
+      fastify.prisma.client.count({ where }),
+    ])
+
+    return { items, total, page, limit, totalPages: Math.ceil(total / limit) }
   })
 
   // GET /clientes/:id

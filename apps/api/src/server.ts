@@ -1,6 +1,7 @@
 import Fastify from 'fastify'
 import cors from '@fastify/cors'
 import jwt from '@fastify/jwt'
+import compress from '@fastify/compress'
 import prismaPlugin from './plugins/prisma.js'
 import { authRoutes } from './routes/auth.js'
 import { syncRoutes } from './routes/sync.js'
@@ -20,6 +21,12 @@ const fastify = Fastify({
 
 async function main() {
   // Plugins
+  await fastify.register(compress, {
+    global: true,
+    encodings: ['br', 'gzip', 'deflate'],
+    threshold: 1024, // solo comprimir respuestas >= 1KB
+  })
+
   await fastify.register(cors, {
     origin: process.env.CORS_ORIGIN ?? '*',
     methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],

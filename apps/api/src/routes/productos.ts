@@ -52,13 +52,27 @@ export async function productosRoutes(fastify: FastifyInstance) {
   })
 
   // GET /productos
-  fastify.get('/productos', async (request) => {
+  fastify.get<{ Querystring: { page?: string; limit?: string; categoria?: string } }>('/productos', async (request) => {
     const { businessId } = request.user as JwtPayload
-    return fastify.prisma.product.findMany({
-      where: { businessId, activo: true },
-      include: { category: true },
-      orderBy: { nombre: 'asc' },
-    })
+    const page = Math.max(1, parseInt(request.query.page ?? '1'))
+    const limit = Math.min(100, Math.max(1, parseInt(request.query.limit ?? '50')))
+    const skip = (page - 1) * limit
+
+    const where: Record<string, unknown> = { businessId, activo: true }
+    if (request.query.categoria) where['categoryId'] = request.query.categoria
+
+    const [items, total] = await Promise.all([
+      fastify.prisma.product.findMany({
+        where,
+        include: { category: true },
+        orderBy: { nombre: 'asc' },
+        skip,
+        take: limit,
+      }),
+      fastify.prisma.product.count({ where }),
+    ])
+
+    return { items, total, page, limit, totalPages: Math.ceil(total / limit) }
   })
 
   // GET /productos/:id
