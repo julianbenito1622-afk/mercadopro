@@ -1,5 +1,12 @@
 [build]
-  command = "npx pnpm install --frozen-lockfile && npx pnpm --filter @mercadopro/web build"
+  command = """
+    npx pnpm install --frozen-lockfile &&
+    npx pnpm --filter @mercadopro/api exec tsc --noEmit &&
+    npx pnpm --filter @mercadopro/web exec tsc --noEmit &&
+    npx pnpm --filter @mercadopro/api run test &&
+    npx pnpm --filter @mercadopro/web run test &&
+    npx pnpm --filter @mercadopro/web build
+  """
   publish = "apps/web/dist"
 
 [build.environment]

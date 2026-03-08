@@ -1,6 +1,7 @@
 import { FastifyInstance } from 'fastify'
 import { PrismaClient } from '@prisma/client'
 import crypto from 'crypto'
+import { requireAdmin } from '../middleware/requireAdmin.js'
 
 type JwtPayload = { userId: string; businessId: string; branchId: string; rol: string }
 type Tx = Omit<PrismaClient, '$connect' | '$disconnect' | '$on' | '$transaction' | '$use' | '$extends'>
@@ -119,7 +120,7 @@ export async function inventarioRoutes(fastify: FastifyInstance) {
       envaseCantidad?: number
       notas?: string
     }
-  }>('/lotes', postLoteSchema, async (request, reply) => {
+  }>('/lotes', { ...postLoteSchema, preHandler: [requireAdmin] }, async (request, reply) => {
     const { businessId, branchId, userId } = request.user as JwtPayload
     const now = new Date()
     const batchId = crypto.randomUUID()
@@ -199,7 +200,7 @@ export async function inventarioRoutes(fastify: FastifyInstance) {
   fastify.patch<{
     Params: { id: string }
     Body: { cantidadKg: number; motivo: string }
-  }>('/lotes/:id/ajuste', patchAjusteSchema, async (request, reply) => {
+  }>('/lotes/:id/ajuste', { ...patchAjusteSchema, preHandler: [requireAdmin] }, async (request, reply) => {
     const { businessId, userId } = request.user as JwtPayload
     const now = new Date()
 
@@ -258,7 +259,7 @@ export async function inventarioRoutes(fastify: FastifyInstance) {
   // POST /proveedores
   fastify.post<{
     Body: { nombre: string; celular?: string; tipo?: string; zonaOrigen?: string; comisionConsignacion?: number }
-  }>('/proveedores', postProveedorSchema, async (request, reply) => {
+  }>('/proveedores', { ...postProveedorSchema, preHandler: [requireAdmin] }, async (request, reply) => {
     const { businessId } = request.user as JwtPayload
     const now = new Date()
     const proveedor = await fastify.prisma.supplier.create({

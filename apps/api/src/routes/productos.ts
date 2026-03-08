@@ -1,5 +1,6 @@
 import { FastifyInstance } from 'fastify'
 import crypto from 'crypto'
+import { requireAdmin } from '../middleware/requireAdmin.js'
 
 type JwtPayload = { userId: string; businessId: string; branchId: string; rol: string }
 
@@ -99,7 +100,7 @@ export async function productosRoutes(fastify: FastifyInstance) {
       esPantallaRapida?: boolean
       ordenPantalla?: number
     }
-  }>('/productos', postProductoSchema, async (request, reply) => {
+  }>('/productos', { ...postProductoSchema, preHandler: [requireAdmin] }, async (request, reply) => {
     const { businessId, userId } = request.user as JwtPayload
     const now = new Date()
 
@@ -135,7 +136,7 @@ export async function productosRoutes(fastify: FastifyInstance) {
       ordenPantalla: number
       activo: boolean
     }>
-  }>('/productos/:id', patchProductoSchema, async (request, reply) => {
+  }>('/productos/:id', { ...patchProductoSchema, preHandler: [requireAdmin] }, async (request, reply) => {
     const { businessId, userId } = request.user as JwtPayload
     const now = new Date()
 
@@ -169,7 +170,7 @@ export async function productosRoutes(fastify: FastifyInstance) {
   })
 
   // DELETE /productos/:id (soft delete)
-  fastify.delete<{ Params: { id: string } }>('/productos/:id', async (request, reply) => {
+  fastify.delete<{ Params: { id: string } }>('/productos/:id', { preHandler: [requireAdmin] }, async (request, reply) => {
     const { businessId } = request.user as JwtPayload
     const existing = await fastify.prisma.product.findFirst({
       where: { id: request.params.id, businessId },
