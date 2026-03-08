@@ -50,14 +50,24 @@ jobs:
         working-directory: apps/web
         run: cap sync android
 
-      # 9. Permisos Gradle
+      # 9. Instalar Android SDK 36 (requerido por variables.gradle)
+      - name: Install Android SDK 36
+        run: |
+          echo "y" | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager \
+            "platforms;android-36" \
+            "build-tools;36.0.0" \
+            "platform-tools"
+
+      # 10. Permisos Gradle
       - name: Grant Gradle permissions
         run: chmod +x apps/web/android/gradlew
 
-      # 10. Build APK debug (listo para instalar sin firmar)
+      # 11. Build APK debug (listo para instalar sin firmar)
       - name: Build APK
         working-directory: apps/web/android
         run: ./gradlew assembleDebug --no-daemon
+        env:
+          ANDROID_HOME: ${{ env.ANDROID_HOME }}
 
       # 11. Subir APK como artifact descargable
       - name: Upload APK
